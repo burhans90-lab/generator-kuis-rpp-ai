@@ -655,6 +655,13 @@ function parseDocuments(raw, selectedOutputs){
 const RETRYABLE_STATUS = [503, 429];
 function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
+// Gemini 2.0 dibatasi 8192 token output oleh Google. Seri 2.5 & 3.x mendukung hingga 65.536 token —
+// jauh lebih longgar sehingga cukup untuk menghasilkan beberapa dokumen panjang sekaligus dalam 1 kali panggilan.
+function getMaxOutputTokens(modelName){
+  if(/gemini-2\.0-/i.test(modelName||"")) return 8192;
+  return 65536;
+}
+
 async function callGemini({apiKey, model, systemInstruction, userPrompt, fileData, onRetry}){
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const parts = [{text: userPrompt}];
@@ -664,7 +671,7 @@ async function callGemini({apiKey, model, systemInstruction, userPrompt, fileDat
   const body = {
     systemInstruction: {parts:[{text: systemInstruction}]},
     contents: [{role:"user", parts}],
-    generationConfig: {temperature:0.85, maxOutputTokens:8192},
+    generationConfig: {temperature:0.85, maxOutputTokens: getMaxOutputTokens(model)},
   };
 
   const maxAttempts = 5; // Lebih agresif: 1 kali kirim + 4 kali retry otomatis
@@ -686,7 +693,8 @@ async function callGemini({apiKey, model, systemInstruction, userPrompt, fileDat
       if(!cand) throw new Error("Respons API kosong. Coba lagi atau periksa API key Anda.");
       const text = (cand.content?.parts || []).map(p=>p.text || "").join("\n");
       if(!text.trim()) throw new Error("Model tidak mengembalikan teks. Coba generate ulang.");
-      return text;
+      const finishReason = cand.finishReason || "";
+      return {text, truncated: finishReason === "MAX_TOKENS", finishReason};
     }
 
     let msg = `Gagal memanggil Gemini API (status ${res.status}).`;
@@ -705,9 +713,47 @@ async function callGemini({apiKey, model, systemInstruction, userPrompt, fileDat
       : res.status===429
       ? " Kuota/limit permintaan tercapai. Tunggu sebentar lalu coba lagi, atau ganti ke model lain di menu ⚙️ Pengaturan."
       : "";
-    throw new Error(lastMsg + extra);
+    const err = new Error(lastMsg + extra);
+    err.status = res.status;
+    err.fallbackEligible = RETRYABLE_STATUS.includes(res.status); // 503 (sibuk) & 429 (kuota) layak dialihkan ke model lain
+    throw err;
   }
-  throw new Error(lastMsg || "Gagal memanggil Gemini API.");
+  const err = new Error(lastMsg || "Gagal memanggil Gemini API.");
+  err.fallbackEligible = true;
+  throw err;
+}
+
+// Urutan model gratis untuk dicoba otomatis kalau model pilihan pengguna sedang limit/sibuk.
+// Model berbayar (tier "pro") SENGAJA tidak dimasukkan ke fallback otomatis agar tidak memakai kuota berbayar tanpa sepengetahuan pengguna.
+function buildFallbackOrder(preferredModel){
+  const freeModels = GEMINI_MODEL_CHOICES.filter(m=>m.tier==="free").map(m=>m.value);
+  const order = [preferredModel, ...freeModels.filter(m=>m!==preferredModel)];
+  return order;
+}
+
+// Wrapper: coba model pilihan pengguna dulu; kalau gagal karena sibuk/kuota habis (setelah retry habis),
+// otomatis lanjut ke model gratis berikutnya dalam daftar, sampai salah satu berhasil.
+async function callGeminiSmart({apiKey, model, systemInstruction, userPrompt, fileData, onRetry, onFallback}){
+  const order = buildFallbackOrder(model);
+  let lastErr;
+  for(let i=0; i<order.length; i++){
+    const currentModel = order[i];
+    try{
+      const result = await callGemini({
+        apiKey, model: currentModel, systemInstruction, userPrompt, fileData,
+        onRetry: (info)=>{ if(onRetry) onRetry({...info, model: currentModel}); }
+      });
+      if(i > 0 && onFallback) onFallback({fromModel: model, toModel: currentModel});
+      return {...result, modelUsed: currentModel};
+    }catch(e){
+      lastErr = e;
+      const isLastOption = i === order.length - 1;
+      if(!e.fallbackEligible || isLastOption){ throw e; }
+      if(onFallback) onFallback({fromModel: currentModel, toModel: order[i+1], switching: true});
+      // lanjut ke model berikutnya di loop
+    }
+  }
+  throw lastErr;
 }
 
 /* ---------------- validasi form ---------------- */
@@ -1042,7 +1088,7 @@ function App(){
     setIsGeneratingTP(true);
     try {
       const prompt = `Berikan 3 contoh Tujuan Pembelajaran (TP) yang spesifik, menantang namun realistis untuk Mata Pelajaran: ${form.mapel}, Topik: ${form.topik}, Fase/Kelas: ${form.fase||'Umum'}/${form.kelas||'Umum'}. Langsung tuliskan poin-poinnya saja tanpa teks pengantar atau penutup. Gunakan bahasa operasional.`;
-      const text = await callGemini({apiKey, model, systemInstruction:"Anda adalah ahli perumus kurikulum yang sangat ringkas.", userPrompt:prompt, fileData:null});
+      const {text} = await callGeminiSmart({apiKey, model, systemInstruction:"Anda adalah ahli perumus kurikulum yang sangat ringkas.", userPrompt:prompt, fileData:null});
       updateField("tp", text.trim());
       setToast("✨ TP otomatis berhasil ditambahkan!");
     } catch(e) {
@@ -1058,7 +1104,7 @@ function App(){
     setIsGeneratingInstruksi(true);
     try {
       const prompt = `Buatkan 1 paragraf singkat instruksi khusus kepada asisten AI agar saat membuat modul ajar untuk Mapel: ${form.mapel}, Topik: ${form.topik} hasilnya menjadi lebih kontekstual dengan kehidupan nyata, menarik, dan menggunakan pendekatan isu atau teknologi terkini. Langsung berikan kalimat instruksinya saja.`;
-      const text = await callGemini({apiKey, model, systemInstruction:"Anda adalah ahli pembuat prompt AI untuk guru yang ringkas.", userPrompt:prompt, fileData:null});
+      const {text} = await callGeminiSmart({apiKey, model, systemInstruction:"Anda adalah ahli pembuat prompt AI untuk guru yang ringkas.", userPrompt:prompt, fileData:null});
       updateField("instruksiKhusus", text.trim());
       setToast("✨ Instruksi otomatis berhasil ditambahkan!");
     } catch(e) {
@@ -1075,7 +1121,7 @@ function App(){
     try {
       const draftContext = `Mapel: ${form.mapel}\nTopik: ${form.topik}\nFase: ${form.fase||'-'}\nTP: ${form.tp}\nMetode: ${form.metode.join(", ")}\nMedia: ${form.media.join(", ")}\nKarakteristik Murid: ${form.karakteristikMurid}`;
       const prompt = `Review secara singkat dan kritis rancangan pembelajaran berikut (maksimal 3 paragraf). Berikan 1 pujian spesifik dan 2 saran praktis untuk membuatnya lebih berdampak dan selaras dengan prinsip Pembelajaran Mendalam (bermakna, berkesadaran, menggembirakan).\n\n${draftContext}`;
-      const text = await callGemini({apiKey, model, systemInstruction:"Anda adalah supervisor pendidikan yang ramah, konstruktif, dan tajam.", userPrompt:prompt, fileData:null});
+      const {text} = await callGeminiSmart({apiKey, model, systemInstruction:"Anda adalah supervisor pendidikan yang ramah, konstruktif, dan tajam.", userPrompt:prompt, fileData:null});
       setReviewResult(text.trim());
       setShowReviewModal(true);
     } catch(e) {
@@ -1110,15 +1156,32 @@ function App(){
     try{
       const sys = buildSystemInstruction();
       const userPrompt = buildUserPrompt(form, outputs, fileTextExtract, file?file.name:null);
-      const raw = await callGemini({apiKey, model, systemInstruction:sys, userPrompt, fileData:fileBase64, onRetry:({attempt, maxAttempts, status})=>{
-        setRetryNote(`Server ${status===503?"sedang sibuk":"membatasi permintaan"} — mencoba ulang otomatis (percobaan ${attempt+1}/${maxAttempts})...`);
-      }});
+      const {text: raw, truncated, modelUsed} = await callGeminiSmart({apiKey, model, systemInstruction:sys, userPrompt, fileData:fileBase64,
+        onRetry:({attempt, maxAttempts, status, model:mAttempt})=>{
+          setRetryNote(`${mAttempt!==model?`[${mAttempt}] `:""}Server ${status===503?"sedang sibuk":"membatasi permintaan"} — mencoba ulang otomatis (percobaan ${attempt+1}/${maxAttempts})...`);
+        },
+        onFallback:({toModel, switching})=>{
+          if(switching) setRetryNote(`Model saat ini masih limit/sibuk — beralih otomatis ke ${toModel}...`);
+        }
+      });
       setRetryNote("");
       const parsed = parseDocuments(raw, outputs);
       setResults(parsed.docs);
       setParseMeta(parsed.meta);
       setActiveTab(outputs[0]);
       const fallbackUsed = Object.values(parsed.meta).some(m=> m!=="exact");
+      const missingDocs = outputs.filter(k=> parsed.meta[k]==="missing").map(k=>DOC_LABEL[k]);
+      const noteList = [];
+      if(modelUsed && modelUsed !== model){
+        noteList.push(`ℹ️ Model utama (${model}) sedang limit/sibuk, sistem otomatis beralih dan berhasil memakai ${modelUsed}.`);
+      }
+      if(truncated){
+        const saran = outputs.length > 2
+          ? `Coba pilih lebih sedikit dokumen output sekaligus (mis. 2-3 dokumen per generate), lalu gunakan tombol "Regenerate bagian ini" untuk sisanya${missingDocs.length?` (terindikasi hilang: ${missingDocs.join(", ")})`:""}.`
+          : `Gunakan tombol "Regenerate bagian ini" pada dokumen yang isinya terlihat terpotong.`;
+        noteList.push(`⚠️ Respons AI mencapai batas maksimum token sebelum selesai menulis semua dokumen — bukan karena model "kurang pintar", tapi karena terlalu banyak dokumen panjang diminta dalam satu kali panggilan. ${saran}`);
+      }
+      if(noteList.length) setWarnings(w=>[...w, ...noteList]);
       const entry = {
         id: Date.now().toString(),
         title: `${form.mapel || "Mapel"} — ${form.topik || "Topik"}`,
@@ -1131,7 +1194,7 @@ function App(){
       const newHist = [entry, ...history].slice(0, 30);
       setHistory(newHist);
       try{ store.set("pm_history", JSON.stringify(newHist)); }catch(e){}
-      setToast(fallbackUsed ? "Berhasil dibuat (sebagian dipisah otomatis oleh parser cerdas)" : "Perangkat ajar berhasil dibuat");
+      setToast(truncated ? "Selesai, tapi sebagian terpotong — lihat catatan di atas" : (fallbackUsed ? "Berhasil dibuat (sebagian dipisah otomatis oleh parser cerdas)" : "Perangkat ajar berhasil dibuat"));
     }catch(e){
       setRetryNote("");
       setErrors([e.message || "Terjadi kesalahan saat memanggil Gemini API."]);
@@ -1148,13 +1211,19 @@ function App(){
     try{
       const sys = buildSystemInstruction();
       const userPrompt = buildUserPrompt(form, [docKey], fileTextExtract, file?file.name:null) + `\n\nFokus HANYA membuat ulang dokumen ${DOC_LABEL[docKey]} (kunci ${docKey.toUpperCase()}), dengan variasi baru namun tetap konsisten dengan konteks di atas.`;
-      const raw = await callGemini({apiKey, model, systemInstruction:sys, userPrompt, fileData:fileBase64, onRetry:({attempt, maxAttempts, status})=>{
-        setToast(`Server ${status===503?"sibuk":"membatasi permintaan"}, mencoba ulang (${attempt+1}/${maxAttempts})...`);
-      }});
+      const {text: raw, truncated, modelUsed} = await callGeminiSmart({apiKey, model, systemInstruction:sys, userPrompt, fileData:fileBase64,
+        onRetry:({attempt, maxAttempts, status, model:mAttempt})=>{
+          setToast(`${mAttempt!==model?`[${mAttempt}] `:""}Server ${status===503?"sibuk":"membatasi permintaan"}, mencoba ulang (${attempt+1}/${maxAttempts})...`);
+        },
+        onFallback:({toModel, switching})=>{
+          if(switching) setToast(`Model saat ini masih limit/sibuk — beralih otomatis ke ${toModel}...`);
+        }
+      });
       const parsed = parseDocuments(raw, [docKey]);
       setResults(r=>({...r, [docKey]: parsed.docs[docKey] || r[docKey]}));
       setParseMeta(pm=>({...pm, [docKey]: parsed.meta[docKey]}));
-      setToast(`${DOC_LABEL[docKey]} berhasil dibuat ulang`);
+      const switchedNote = (modelUsed && modelUsed !== model) ? ` (otomatis pakai ${modelUsed} karena model utama limit)` : "";
+      setToast(truncated ? `${DOC_LABEL[docKey]} masih terpotong — dokumen ini sendiri sudah sangat panjang, coba lagi atau persingkat instruksi khususnya` : `${DOC_LABEL[docKey]} berhasil dibuat ulang${switchedNote}`);
     }catch(e){
       setToast("Gagal regenerate: " + (e.message||""));
     }finally{
@@ -1610,6 +1679,7 @@ function App(){
                   {GEMINI_MODEL_CHOICES.filter(m=>m.tier==="pro").map(m=>(<option key={m.value} value={m.value}>{m.label}</option>))}
                 </optgroup>
               </select>
+              <div className="hint">Ini jadi model utama pilihan Anda. Jika model ini sedang sibuk/limit, sistem otomatis mencoba model gratis lain secara berurutan sampai berhasil — model berbayar tidak pernah dipakai otomatis.</div>
             </div>
             <div className="modal-actions">
               <button className="btn ghost" onClick={()=>setShowSettings(false)}>Batal</button>
