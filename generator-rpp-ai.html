@@ -277,12 +277,12 @@ textarea{ resize:vertical; min-height:80px; line-height:1.5; }
 .link:hover{ text-decoration:underline; }
 
 /* Styles untuk Kop Identitas di UI Web (Preview) */
-.kop-preview-container { border: 1.5px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 24px; background: var(--bg); }
+.kop-preview-container { border: 1.5px solid var(--line); border-radius: 12px; padding: 18px 22px; margin-bottom: 24px; background: var(--bg); }
 .kop-table-ui{ border:none; margin-bottom:16px; width:100%; border-collapse:collapse; }
-.kop-table-ui td{ border:none; padding:6px 8px; font-size:13.5px; vertical-align:top; }
-.kop-title-ui{ text-align:center; font-weight:800; font-size:20px; margin-bottom:4px; color:var(--violet-900); font-family:'Lora', serif; }
+.kop-table-ui td{ border:none; padding:6px 8px; font-size:13.5px; vertical-align:top; text-align:left; }
+.kop-title-ui{ text-align:right; font-weight:800; font-size:23px; margin-bottom:4px; color:var(--violet-900); font-family:'Lora', serif; }
 [data-theme="dark"] .kop-title-ui{ color:var(--violet-100); }
-.kop-sub-ui{ text-align:center; font-size:12px; color:var(--ink-soft); margin-bottom:20px; font-weight:500; }
+.kop-sub-ui{ text-align:right; font-size:12.5px; color:var(--ink-soft); margin-bottom:20px; font-weight:700; }
 </style>
 </head>
 <body>
@@ -409,6 +409,7 @@ function buildSystemInstruction(){
 - JANGAN menyisakan placeholder seperti "[isi di sini]", "(lengkapi)", atau teks instruksi kepada guru di dalam dokumen final — semua bagian harus sudah terisi penuh dan siap pakai.
 - JANGAN menulis apa pun (basa-basi, catatan, ringkasan) di luar blok penanda dokumen yang diwajibkan pada bagian FORMAT KELUARAN.
 - Gunakan Bahasa Indonesia baku sesuai kaidah EYD, istilah pendidikan yang konsisten, dan hindari pengulangan kalimat generik antar dokumen.
+- JANGAN PERNAH menggunakan sintaks LaTeX/rumus matematika dalam bentuk apa pun — termasuk namun tidak terbatas pada \\phantom{}, \\frac{}, \\left(, \\right), \\text{}, \\checkmark, atau tanda dolar $...$ — baik untuk menuliskan rumus MAUPUN untuk membuat ruang/garis kosong isian. Untuk RUMUS (mis. Engagement Rate), tulis dengan notasi teks biasa yang mudah dibaca, contoh persis: ER = ((Jumlah Likes + Jumlah Komentar + Jumlah Share) / Jumlah Pengunjung) x 100%. Untuk RUANG JAWABAN KOSONG yang harus diisi tangan oleh murid (mis. "Nama Kelompok:", "Ruang Jawaban:"), JANGAN gunakan titik-titik panjang atau tanda kurung siku — gunakan PERSIS garis bawah sepanjang ini: ________________________________________ (sekitar 40 karakter garis bawah polos, tanpa kurung siku di awal/akhir).
 
 === 1. TIGA PRINSIP UTAMA PM (wajib tercermin eksplisit di SETIAP tahap, bukan hanya disebut sekali) ===
 - BERKESADARAN (mindful): murid memahami tujuan & strategi belajarnya sehingga punya arah dan motivasi intrinsik.
@@ -540,6 +541,15 @@ function cleanLatex(s){
 function latexToPlain(s){
   if(!s) return s;
   let t = s;
+  // \phantom{...} sering dipakai AI untuk membuat "ruang kosong" jawaban — HARUS ditangani lebih dulu
+  // dan SEBELUM aturan umum lain, karena isinya (mis. deretan huruf X) bisa ikut tersapu oleh
+  // pembersihan umum di bagian bawah jika tidak ditangani di sini. Diubah jadi garis bawah rapi.
+  const BLANK_LINE = "________________________________________"; // ~42 karakter, aman di lebar halaman Word
+  t = t.replace(/\\phantom\s*\{[^}]*\}/gi, BLANK_LINE);
+  t = t.replace(/\\phantom[A-Za-z0-9]*/gi, BLANK_LINE); // varian tanpa kurung kurawal (mis. \phantomXXXX...)
+  t = t.replace(/\\checkmark/gi, "✓");
+  t = t.replace(/\\square/gi, "☐");
+  t = t.replace(/\\bullet/gi, "•");
   // Pembungkus teks & format
   t = t.replace(/\\text\{([^}]*)\}/g, "$1");
   t = t.replace(/\\mathrm\{([^}]*)\}/g, "$1");
@@ -823,49 +833,50 @@ function CheckChip({label, checked, onClick}){
 /* ---------------- Word (.doc) & UI Preview Kop Helpers ---------------- */
 const DOC_HTML_STYLE = `
   @page { size: 21cm 29.7cm; margin: 2.5cm 2cm; }
-  body{ font-family:Arial, Calibri, sans-serif; font-size:13.5px; line-height:1.6; color:#1a1a1a; text-align:justify; }
-  p{ margin:0 0 8px 0; text-align:justify; }
+  body{ font-family:Arial, Calibri, sans-serif; font-size:13.5px; line-height:1.6; color:#1a1a1a; text-align:left; }
+  p{ margin:0 0 8px 0; text-align:left; }
   h1,h2,h3{ font-family:Arial, Calibri, sans-serif; color:#2e1863; text-align:left; }
   h1{ font-size:20px; margin-top:0; } h2{ font-size:16px; } h3{ font-size:14px; }
   table{ border-collapse:collapse; width:100%; margin:10px 0; }
   th,td{ border:1px solid #999; padding:6px 8px; font-size:12.5px; text-align:left; }
   th{ background:#f2edff; }
-  li{ text-align:justify; }
+  li{ text-align:left; }
   .page-break{ page-break-before:always; mso-page-break-before:always; mso-special-character:line-break; }
 `;
 
 function buildKopHtml(form, docTitle, pageBreak){
-  // Kop ini sekarang akan tampil baik di Word maupun di layar web preview
-  const breakStyle = pageBreak ? ' style="page-break-before:always; mso-page-break-before:always;"' : '';
+  // Semua styling di sini INLINE (bukan mengandalkan class CSS) supaya tampilannya
+  // konsisten baik di preview web maupun saat dibuka di Microsoft Word.
+  const breakStyle = pageBreak ? 'page-break-before:always; mso-page-break-before:always;' : '';
   return `
-  <div class="kop-preview-container">
-    <div class="kop-title-ui"${breakStyle}>${docTitle}</div>
-    <div class="kop-sub-ui">Disusun mengikuti kerangka Pembelajaran Mendalam — Permendikdasmen No. 13/2025</div>
-    <table class="kop-table-ui" style="width:100%; border-collapse:collapse; margin-bottom:16px;">
+  <div style="border:1.5px solid #e0d9f7; border-radius:12px; padding:18px 22px; margin-bottom:20px; background:#faf8ff;">
+    <div style="text-align:right; font-weight:800; font-size:23px; margin-bottom:4px; color:#2e1863; font-family:Georgia,'Times New Roman',serif; ${breakStyle}">${docTitle}</div>
+    <div style="text-align:right; font-size:12.5px; color:#5b5477; margin-bottom:18px; font-weight:700;">Disusun mengikuti kerangka Pembelajaran Mendalam — Permendikdasmen No. 13/2025</div>
+    <table style="width:100%; border-collapse:collapse; margin-bottom:6px;" cellpadding="4" cellspacing="0">
       <tr>
-        <td style="width:18%; border:none; padding:4px;"><b>Mata Pelajaran</b></td>
-        <td style="width:32%; border:none; padding:4px;">: ${form.mapel || "-"}</td>
-        <td style="width:18%; border:none; padding:4px;"><b>Fase / Kelas</b></td>
-        <td style="width:32%; border:none; padding:4px;">: ${form.fase || "-"} / ${form.kelas || "-"}</td>
+        <td style="width:18%; border:none; padding:4px; text-align:left;"><b>Mata Pelajaran</b></td>
+        <td style="width:32%; border:none; padding:4px; text-align:left;">: ${form.mapel || "-"}</td>
+        <td style="width:18%; border:none; padding:4px; text-align:left;"><b>Fase / Kelas</b></td>
+        <td style="width:32%; border:none; padding:4px; text-align:left;">: ${form.fase || "-"} / ${form.kelas || "-"}</td>
       </tr>
       <tr>
-        <td style="border:none; padding:4px;"><b>Sekolah</b></td>
-        <td style="border:none; padding:4px;">: ${form.namaSekolah || "-"}</td>
-        <td style="border:none; padding:4px;"><b>Semester</b></td>
-        <td style="border:none; padding:4px;">: ${form.semester || "-"}</td>
+        <td style="border:none; padding:4px; text-align:left;"><b>Sekolah</b></td>
+        <td style="border:none; padding:4px; text-align:left;">: ${form.namaSekolah || "-"}</td>
+        <td style="border:none; padding:4px; text-align:left;"><b>Semester</b></td>
+        <td style="border:none; padding:4px; text-align:left;">: ${form.semester || "-"}</td>
       </tr>
       <tr>
-        <td style="border:none; padding:4px;"><b>Penyusun</b></td>
-        <td style="border:none; padding:4px;">: ${form.namaPenyusun || "-"}</td>
-        <td style="border:none; padding:4px;"><b>Tahun Pelajaran</b></td>
-        <td style="border:none; padding:4px;">: ${form.tahunPelajaran || "-"}</td>
+        <td style="border:none; padding:4px; text-align:left;"><b>Penyusun</b></td>
+        <td style="border:none; padding:4px; text-align:left;">: ${form.namaPenyusun || "-"}</td>
+        <td style="border:none; padding:4px; text-align:left;"><b>Tahun Pelajaran</b></td>
+        <td style="border:none; padding:4px; text-align:left;">: ${form.tahunPelajaran || "-"}</td>
       </tr>
       <tr>
-        <td style="border:none; padding:4px;"><b>Topik</b></td>
-        <td colspan="3" style="border:none; padding:4px;">: ${form.topik || "-"}</td>
+        <td style="border:none; padding:4px; text-align:left;"><b>Topik</b></td>
+        <td colspan="3" style="border:none; padding:4px; text-align:left;">: ${form.topik || "-"}</td>
       </tr>
     </table>
-    <hr style="border:none; border-top:1.5px solid var(--line, #ccc); margin:18px 0;"/>
+    <hr style="border:none; border-top:1.5px solid #cdb8ff; margin:16px 0 0;"/>
   </div>`;
 }
 
