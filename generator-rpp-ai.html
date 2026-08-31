@@ -48,6 +48,7 @@ button{ font-family:inherit; cursor:pointer; }
 input,textarea,select{ font-family:inherit; }
 ::selection{ background:var(--violet-300); }
 .wrap{ max-width:1180px; margin:0 auto; padding:0 20px 80px; }
+
 .header{
   position:sticky; top:0; z-index:40; backdrop-filter:blur(10px);
   background:color-mix(in srgb, var(--bg) 78%, transparent);
@@ -237,12 +238,18 @@ textarea{ resize:vertical; min-height:80px; line-height:1.5; }
 .tool-btn:hover{ border-color:var(--violet-300); color:var(--violet-700); }
 .tool-btn:disabled{ opacity:.55; cursor:not-allowed; }
 .parse-warn-note{ display:flex; gap:8px; align-items:flex-start; padding:10px 12px; border-radius:10px; background:var(--warn-bg); color:var(--warn); font-size:11.5px; font-weight:600; margin-bottom:14px; }
+
+/* ---------------- Styles untuk merender konten dokumen (Preview Panel) ---------------- */
 .doc-content{ font-size:14px; line-height:1.75; color:var(--ink); }
 .doc-content h1, .doc-content h2, .doc-content h3{ font-family:'Lora',serif; margin-top:1.4em; margin-bottom:.5em; color:var(--ink); }
-.doc-content h1{ font-size:1.5em; } .doc-content h2{ font-size:1.25em; } .doc-content h3{ font-size:1.08em; }
+/* PERBAIKAN: Judul utama rata tengah, bold, kapital; sub-judul rata kiri */
+.doc-content h1{ font-size:1.5em; text-align:center; font-weight:bold; text-transform:uppercase; } 
+.doc-content h2{ font-size:1.25em; text-align:left; } 
+.doc-content h3{ font-size:1.08em; text-align:left; }
+.doc-content p, .doc-content li, .doc-content td { text-align:left; } /* Menghindari justify */
 .doc-content ul, .doc-content ol{ padding-left:1.4em; }
-.doc-content table{ border-collapse:collapse; width:100%; margin:1em 0; font-size:.92em; }
-.doc-content th, .doc-content td{ border:1px solid var(--line); padding:8px 10px; text-align:left; }
+.doc-content table{ border-collapse:collapse; width:100%; margin:1em 0; font-size:.92em; text-align:left; }
+.doc-content th, .doc-content td{ border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
 .doc-content th{ background:var(--violet-100); }
 .doc-content code{ background:var(--violet-100); padding:1px 6px; border-radius:5px; font-size:.9em; }
 .doc-content blockquote{ border-left:3px solid var(--violet-400); padding-left:14px; color:var(--ink-soft); margin:1em 0; }
@@ -276,13 +283,13 @@ textarea{ resize:vertical; min-height:80px; line-height:1.5; }
 .link{ color:var(--violet-600); font-weight:700; text-decoration:none; }
 .link:hover{ text-decoration:underline; }
 
-/* Styles untuk Kop Identitas di UI Web (Preview) */
+/* Styles tambahan untuk Kop Identitas (Preview UI), disesuaikan agar konsisten */
 .kop-preview-container { border: 1.5px solid var(--line); border-radius: 12px; padding: 18px 22px; margin-bottom: 24px; background: var(--bg); }
-.kop-table-ui{ border:none; margin-bottom:16px; width:100%; border-collapse:collapse; }
+.kop-table-ui{ border:none; margin-bottom:16px; width:100%; border-collapse:collapse; text-align:left; }
 .kop-table-ui td{ border:none; padding:6px 8px; font-size:13.5px; vertical-align:top; text-align:left; }
-.kop-title-ui{ text-align:right; font-weight:800; font-size:23px; margin-bottom:4px; color:var(--violet-900); font-family:'Lora', serif; }
+.kop-title-ui{ text-align:center; font-weight:bold; font-size:23px; margin-bottom:4px; color:var(--violet-900); font-family:'Lora', serif; text-transform:uppercase; }
 [data-theme="dark"] .kop-title-ui{ color:var(--violet-100); }
-.kop-sub-ui{ text-align:right; font-size:12.5px; color:var(--ink-soft); margin-bottom:20px; font-weight:700; }
+.kop-sub-ui{ text-align:left; font-size:12.5px; color:var(--ink-soft); margin-bottom:20px; font-weight:700; }
 </style>
 </head>
 <body>
@@ -290,7 +297,6 @@ textarea{ resize:vertical; min-height:80px; line-height:1.5; }
 <script type="text/babel" data-presets="react">
 const {useState, useEffect, useRef, useMemo, useCallback} = React;
 
-/* ---------------- constants ---------------- */
 const FASE_OPTIONS = [
   {v:"Fase A (1-2)", l:"Fase A — Kelas 1-2 SD"},
   {v:"Fase B (3-4)", l:"Fase B — Kelas 3-4 SD"},
@@ -318,7 +324,6 @@ const DOC_LABEL = {modul:"Modul Ajar", materi:"Materi Ajar", lkpd:"LKPD", asesme
 const MARKER = (k)=>`<<<DOKUMEN:${k.toUpperCase()}>>>`;
 const MARKER_END = "<<<END_DOKUMEN>>>";
 
-// Model Gemini dikembalikan agar lengkap.
 const GEMINI_MODEL_CHOICES = [
   {value:"gemini-3.5-flash", label:"Gemini 3.5 Flash — Terbaru & Gratis", tier:"free"},
   {value:"gemini-3-flash-preview", label:"Gemini 3 Flash Preview — Gratis", tier:"free"},
@@ -330,13 +335,11 @@ const GEMINI_MODEL_CHOICES = [
   {value:"gemini-3.1-pro-preview", label:"Gemini 3.1 Pro — Berbayar, penalaran terkuat", tier:"pro"},
 ];
 const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash";
-
-// API Key Gemini kini diatur lewat menu Pengaturan (ikon ⚙️ di header) dan tersimpan otomatis
-// di penyimpanan lokal browser Anda.
 const GEMINI_API_KEY_FALLBACK = "";
 
 const DEFAULT_FORM = {
   namaPenyusun:"", nip:"", namaSekolah:"", namaKepsek:"", nipKepsek:"", mapel:"", konsentrasi:"",
+  titimangsa:"Sumedang, 13 Juli 2026",
   fase:"", kelas:"", semester:"Ganjil", tahunPelajaran:"2026/2027",
   tp:"", topik:"", elemenCP:"", model:"", metode:[], jpJumlah:"2", jpMenit:"40", jumlahPertemuan:"1",
   dimensi:["Keimanan dan Ketakwaan terhadap Tuhan YME","Penalaran Kritis","Kolaborasi","Kreativitas","Komunikasi"],
@@ -360,7 +363,6 @@ function buildProgressSteps(outputs){
   return steps;
 }
 
-/* ---------------- storage helper ---------------- */
 function safeStorage(){
   try{
     const testKey="__t__"; localStorage.setItem(testKey,"1"); localStorage.removeItem(testKey);
@@ -393,13 +395,11 @@ function formatBytes(n){
   return (n/(1024*1024)).toFixed(1) + " MB";
 }
 
-/* ---------------- markdown ---------------- */
 function renderMd(text){
   if(!text) return "";
   try{ return marked.parse(text, {breaks:true}); }catch(e){ return text.replace(/\n/g,"<br/>"); }
 }
 
-/* ---------------- system prompt ---------------- */
 function buildSystemInstruction(){
   return `Anda adalah asisten ahli kurikulum yang membantu guru di Indonesia menyusun perangkat ajar sesuai kerangka resmi PEMBELAJARAN MENDALAM (PM) sebagaimana diatur dalam Permendikdasmen No. 13 Tahun 2025 tentang Standar Proses. Ikuti kerangka berikut secara KETAT, LENGKAP, dan JANGAN disederhanakan atau diringkas melebihi yang diminta.
 
@@ -455,7 +455,7 @@ Bungkus SETIAP dokumen dengan penanda PERSIS seperti ini, tanpa spasi tambahan, 
 Gunakan NAMA_KUNCI sesuai permintaan pada prompt pengguna. Jangan menambahkan dokumen di luar yang diminta. Jangan menulis apa pun di luar blok penanda tersebut.
 
 === FORMAT PER JENIS DOKUMEN ===
-- MODUL: Identitas → Tujuan Pembelajaran & Dimensi Profil Lulusan terpilih → 3 Prinsip PM (uraian singkat penerapannya di modul ini) → Alur Memahami-Mengaplikasi-Merefleksi (rinci per tahap dengan estimasi waktu, aktivitas guru & murid) → Komponen Pendukung (lingkungan/kemitraan/digital) → Daftar Pustaka → WAJIB DIAKHIRI dengan Blok Tanda Tangan berformat tabel dua kolom: kolom kiri "Mengetahui, Kepala Sekolah" beserta baris kosong tanda tangan lalu nama & NIP Kepala Sekolah; kolom kanan tempat/tanggal lalu "Guru Mata Pelajaran" beserta baris kosong tanda tangan lalu nama & NIP/NUPTK Guru Penyusun.
+- MODUL: Identitas → Tujuan Pembelajaran & Dimensi Profil Lulusan terpilih → 3 Prinsip PM (uraian singkat penerapannya di modul ini) → Alur Memahami-Mengaplikasi-Merefleksi (rinci per tahap dengan estimasi waktu, aktivitas guru & murid) → Komponen Pendukung (lingkungan/kemitraan/digital) → Daftar Pustaka.
 - MATERI (Materi Ajar): bahan bacaan/materi ajar yang detail dan terstruktur (sub-judul, contoh, ilustrasi konsep) untuk dibaca langsung oleh murid sebagai sumber belajar utama tahap Memahami, sesuai topik dan jenjang, minimal 500-800 kata.
 - LKPD: identitas ringkas → instruksi kerja terstruktur mengikuti 3 tahap alur belajar → ruang jawaban/kerja murid → kolom refleksi mandiri.
 - ASESMEN: 3 jenis asesmen (Assessment as/for/of Learning) lengkap dengan instrumen & rubrik deskriptif.
@@ -526,41 +526,31 @@ ${f.instruksiKhusus || "(tidak ada)"}
   return prompt;
 }
 
-/* ---------------- parser hasil AI — lebih toleran terhadap marker tidak lengkap ---------------- */
 function cleanLatex(s){
   if(!s) return s;
   let t = s;
-  // $$...$$  (blok rumus) -> ambil isinya, bersihkan perintah LaTeX di dalamnya
   t = t.replace(/\$\$([\s\S]*?)\$\$/g, (_, inner)=>latexToPlain(inner));
-  // $...$ (inline rumus)
   t = t.replace(/\$([^$\n]{1,300}?)\$/g, (_, inner)=>latexToPlain(inner));
-  // sisa perintah LaTeX yang mungkin lolos tanpa tanda $
   t = latexToPlain(t);
   return t;
 }
 function latexToPlain(s){
   if(!s) return s;
   let t = s;
-  // \phantom{...} sering dipakai AI untuk membuat "ruang kosong" jawaban — HARUS ditangani lebih dulu
-  // dan SEBELUM aturan umum lain, karena isinya (mis. deretan huruf X) bisa ikut tersapu oleh
-  // pembersihan umum di bagian bawah jika tidak ditangani di sini. Diubah jadi garis bawah rapi.
-  const BLANK_LINE = "________________________________________"; // ~42 karakter, aman di lebar halaman Word
+  const BLANK_LINE = "________________________________________"; 
   t = t.replace(/\\phantom\s*\{[^}]*\}/gi, BLANK_LINE);
-  t = t.replace(/\\phantom[A-Za-z0-9]*/gi, BLANK_LINE); // varian tanpa kurung kurawal (mis. \phantomXXXX...)
+  t = t.replace(/\\phantom[A-Za-z0-9]*/gi, BLANK_LINE); 
   t = t.replace(/\\checkmark/gi, "✓");
   t = t.replace(/\\square/gi, "☐");
   t = t.replace(/\\bullet/gi, "•");
-  // Pembungkus teks & format
   t = t.replace(/\\text\{([^}]*)\}/g, "$1");
   t = t.replace(/\\mathrm\{([^}]*)\}/g, "$1");
   t = t.replace(/\\mathbf\{([^}]*)\}/g, "$1");
   t = t.replace(/\\boldsymbol\{([^}]*)\}/g, "$1");
   t = t.replace(/\\operatorname\{([^}]*)\}/g, "$1");
-  // Pecahan & akar
   t = t.replace(/\\d?frac\{([^}]*)\}\{([^}]*)\}/g, "($1 / $2)");
   t = t.replace(/\\tfrac\{([^}]*)\}\{([^}]*)\}/g, "($1 / $2)");
   t = t.replace(/\\sqrt\{([^}]*)\}/g, "√($1)");
-  // Kurung pembungkus otomatis \left( ... \right) dan variasinya — sumber utama kode bocor ke hasil
   t = t.replace(/\\left\s*\(/g, "(");
   t = t.replace(/\\right\s*\)/g, ")");
   t = t.replace(/\\left\s*\[/g, "[");
@@ -573,7 +563,6 @@ function latexToPlain(s){
   t = t.replace(/\\right\s*\./g, "");
   t = t.replace(/\\left/g, "");
   t = t.replace(/\\right/g, "");
-  // Panah & relasi
   t = t.replace(/\\rightarrow/g, "→");
   t = t.replace(/\\leftarrow/g, "←");
   t = t.replace(/\\Rightarrow/g, "⇒");
@@ -593,14 +582,10 @@ function latexToPlain(s){
   t = t.replace(/\\quad/g, "  ");
   t = t.replace(/\\qquad/g, "    ");
   t = t.replace(/\\\\/g, " ");
-  // Superskrip/subskrip sederhana: x^{2} -> x^2, x_{1} -> x_1
   t = t.replace(/\^\{([^}]*)\}/g, "^$1");
   t = t.replace(/_\{([^}]*)\}/g, "_$1");
-  // Lingkungan LaTeX
   t = t.replace(/\\begin\{[^}]*\}/g, "");
   t = t.replace(/\\end\{[^}]*\}/g, "");
-  // Penyapu terakhir: buang sisa perintah LaTeX apa pun yang belum tertangani di atas
-  // (mis. \left, \right, \displaystyle, dll yang lolos) supaya tidak ada kode mentah ke pengguna
   t = t.replace(/\\[a-zA-Z]+/g, "");
   t = t.replace(/[{}]/g, "");
   return t;
@@ -619,7 +604,6 @@ function parseDocuments(raw, selectedOutputs){
   const meta = {};
   if(!raw) raw = "";
 
-  // Pass 1: exact/lenient marker pairs (toleran spasi, jumlah "<"/">" 2-3, end marker opsional)
   selectedOutputs.forEach(k=>{
     const key = k.toUpperCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
     const re = new RegExp(
@@ -633,7 +617,6 @@ function parseDocuments(raw, selectedOutputs){
     }
   });
 
-  // Pass 2: untuk yang belum ketemu, cari heading yang cocok dengan nama dokumen (mis. "# MODUL AJAR", "## LKPD")
   let missing = selectedOutputs.filter(k=>!docs[k]);
   missing.forEach(k=>{
     const label = DOC_LABEL[k].replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
@@ -645,7 +628,6 @@ function parseDocuments(raw, selectedOutputs){
     }
   });
 
-  // Pass 3: jika sama sekali tidak ada yang cocok dan hanya 1 dokumen diminta, dan raw punya isi -> dump semua
   missing = selectedOutputs.filter(k=>!docs[k]);
   const foundAny = Object.keys(docs).length>0;
   if(!foundAny && raw.trim() && selectedOutputs.length){
@@ -661,12 +643,9 @@ function parseDocuments(raw, selectedOutputs){
   return {docs, meta};
 }
 
-/* ---------------- Gemini API ---------------- */
 const RETRYABLE_STATUS = [503, 429];
 function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
-// Gemini 2.0 dibatasi 8192 token output oleh Google. Seri 2.5 & 3.x mendukung hingga 65.536 token —
-// jauh lebih longgar sehingga cukup untuk menghasilkan beberapa dokumen panjang sekaligus dalam 1 kali panggilan.
 function getMaxOutputTokens(modelName){
   if(/gemini-2\.0-/i.test(modelName||"")) return 8192;
   return 65536;
@@ -684,7 +663,7 @@ async function callGemini({apiKey, model, systemInstruction, userPrompt, fileDat
     generationConfig: {temperature:0.85, maxOutputTokens: getMaxOutputTokens(model)},
   };
 
-  const maxAttempts = 5; // Lebih agresif: 1 kali kirim + 4 kali retry otomatis
+  const maxAttempts = 5; 
   let lastMsg = "";
   for(let attempt=1; attempt<=maxAttempts; attempt++){
     let res;
@@ -692,8 +671,7 @@ async function callGemini({apiKey, model, systemInstruction, userPrompt, fileDat
       res = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
     }catch(networkErr){
       throw new Error(
-        "Gagal terhubung ke server Gemini (Failed to fetch) — ini error jaringan/browser SEBELUM sempat memeriksa API key. Penyebab umum: " +
-        "(1) tidak ada koneksi internet; (2) ad-blocker memblokir Google API; (3) firewall jaringan sekolah/kantor; (4) dibuka lewat file:// bukan localhost."
+        "Gagal terhubung ke server Gemini. Periksa koneksi internet Anda."
       );
     }
 
@@ -712,20 +690,19 @@ async function callGemini({apiKey, model, systemInstruction, userPrompt, fileDat
     lastMsg = msg;
 
     if(RETRYABLE_STATUS.includes(res.status) && attempt < maxAttempts){
-      // Exponential backoff with jitter: 1s, 2s, 4s, 8s + sedikit acak
       const waitMs = Math.pow(2, attempt - 1) * 1000 + Math.floor(Math.random() * 500); 
       if(onRetry) onRetry({attempt, maxAttempts, waitMs, status:res.status});
       await sleep(waitMs);
       continue;
     }
     const extra = res.status===503
-      ? " Model sedang dipakai banyak orang (kondisi sementara). Sudah dicoba ulang otomatis beberapa kali — silakan coba lagi sesaat lagi, atau ganti model lain (mis. Gemini 1.5 Flash) lewat menu ⚙️ Pengaturan."
+      ? " Model sedang sibuk, silakan coba lagi sesaat lagi."
       : res.status===429
-      ? " Kuota/limit permintaan tercapai. Tunggu sebentar lalu coba lagi, atau ganti ke model lain di menu ⚙️ Pengaturan."
+      ? " Kuota/limit tercapai, tunggu sebentar lalu coba lagi."
       : "";
     const err = new Error(lastMsg + extra);
     err.status = res.status;
-    err.fallbackEligible = RETRYABLE_STATUS.includes(res.status); // 503 (sibuk) & 429 (kuota) layak dialihkan ke model lain
+    err.fallbackEligible = RETRYABLE_STATUS.includes(res.status); 
     throw err;
   }
   const err = new Error(lastMsg || "Gagal memanggil Gemini API.");
@@ -733,16 +710,12 @@ async function callGemini({apiKey, model, systemInstruction, userPrompt, fileDat
   throw err;
 }
 
-// Urutan model gratis untuk dicoba otomatis kalau model pilihan pengguna sedang limit/sibuk.
-// Model berbayar (tier "pro") SENGAJA tidak dimasukkan ke fallback otomatis agar tidak memakai kuota berbayar tanpa sepengetahuan pengguna.
 function buildFallbackOrder(preferredModel){
   const freeModels = GEMINI_MODEL_CHOICES.filter(m=>m.tier==="free").map(m=>m.value);
   const order = [preferredModel, ...freeModels.filter(m=>m!==preferredModel)];
   return order;
 }
 
-// Wrapper: coba model pilihan pengguna dulu; kalau gagal karena sibuk/kuota habis (setelah retry habis),
-// otomatis lanjut ke model gratis berikutnya dalam daftar, sampai salah satu berhasil.
 async function callGeminiSmart({apiKey, model, systemInstruction, userPrompt, fileData, onRetry, onFallback}){
   const order = buildFallbackOrder(model);
   let lastErr;
@@ -760,13 +733,11 @@ async function callGeminiSmart({apiKey, model, systemInstruction, userPrompt, fi
       const isLastOption = i === order.length - 1;
       if(!e.fallbackEligible || isLastOption){ throw e; }
       if(onFallback) onFallback({fromModel: currentModel, toModel: order[i+1], switching: true});
-      // lanjut ke model berikutnya di loop
     }
   }
   throw lastErr;
 }
 
-/* ---------------- validasi form ---------------- */
 function validateForm(form, outputs, apiKey){
   const errors = [];
   const warnings = [];
@@ -789,15 +760,135 @@ function validateForm(form, outputs, apiKey){
   if(!form.namaSekolah.trim()) warnings.push("Nama Sekolah belum diisi — kop dokumen Word akan kosong.");
   if(outputs.includes("modul") && !form.nipKepsek.trim()) warnings.push("NIP Kepala Sekolah belum diisi — blok tanda tangan Modul Ajar akan kosong.");
   if(!form.metode.length) warnings.push("Metode Pembelajaran belum dipilih — AI akan menentukan sendiri.");
-  if(!form.karakteristikMurid.trim()) warnings.push("Kesiapan & Karakteristik Murid belum diisi — hasil bisa kurang personal.");
-  if(form.tahunPelajaran && !/^\d{4}\/\d{4}$/.test(form.tahunPelajaran.trim())){
+  if(!form.tahunPelajaran && !/^\d{4}\/\d{4}$/.test(form.tahunPelajaran.trim())){
     warnings.push("Format Tahun Pelajaran sebaiknya seperti 2025/2026.");
   }
 
   return {errors, warnings, fieldErrors};
 }
 
-/* ---------------- small components ---------------- */
+// PERBAIKAN: Style eksport dokumen agar Judul Utama (h1) Rata Tengah & Bold, sisanya (h2, h3, tabel, dsb) murni Rata Kiri
+const DOC_HTML_STYLE = `
+  @page Section1 { size: 21cm 29.7cm; margin: 2.5cm 2cm; mso-page-orientation: portrait; mso-header-margin: 35.4pt; mso-footer-margin: 35.4pt; mso-paper-source: 0; }
+  div.Section1 { page: Section1; }
+  body { font-family:Arial, Calibri, sans-serif; font-size:13.5px; line-height:1.6; color:#000000; text-align:left; }
+  p { margin:0 0 8px 0; text-align:left; }
+  h1,h2,h3,h4,h5,h6 { font-family:Arial, Calibri, sans-serif; color:#000000; font-weight:bold; }
+  h1{ font-size:20px; margin-top:0; text-align:center; text-transform:uppercase; }
+  h2{ font-size:16px; text-align:left; } 
+  h3{ font-size:14px; text-align:left; }
+  h4,h5,h6{ text-align:left; }
+  table{ border-collapse:collapse; width:100%; margin:10px 0; text-align:left; }
+  th,td{ border:1px solid #000; padding:6px 8px; font-size:12.5px; text-align:left; vertical-align:top; }
+  th{ background:#f2edff; }
+  li{ text-align:left; }
+  .page-break{ page-break-before:always; mso-page-break-before:always; mso-special-character:line-break; }
+`;
+
+function buildKopHtml(form, docTitle, pageBreak){
+  const breakStyle = pageBreak ? 'page-break-before:always; mso-page-break-before:always;' : '';
+  // PERBAIKAN: Judul Kop dibuat text-align:center, Sub-judul dan tabel text-align:left
+  return `
+  <div style="border:1.5px solid #e0d9f7; border-radius:12px; padding:18px 22px; margin-bottom:20px; background:#faf8ff;">
+    <div style="text-align:center; font-weight:bold; font-size:23px; margin-bottom:4px; color:#2e1863; font-family:Georgia,'Times New Roman',serif; text-transform:uppercase; ${breakStyle}">${docTitle}</div>
+    <div style="text-align:left; font-size:12.5px; color:#5b5477; margin-bottom:18px; font-weight:700;">Disusun mengikuti kerangka Pembelajaran Mendalam — Permendikdasmen No. 13/2025</div>
+    <table style="width:100%; border-collapse:collapse; margin-bottom:6px; text-align:left;" cellpadding="4" cellspacing="0">
+      <tr>
+        <td style="width:18%; border:none; padding:4px; text-align:left;"><b>Mata Pelajaran</b></td>
+        <td style="width:32%; border:none; padding:4px; text-align:left;">: ${form.mapel || "-"}</td>
+        <td style="width:18%; border:none; padding:4px; text-align:left;"><b>Fase / Kelas</b></td>
+        <td style="width:32%; border:none; padding:4px; text-align:left;">: ${form.fase || "-"} / ${form.kelas || "-"}</td>
+      </tr>
+      <tr>
+        <td style="border:none; padding:4px; text-align:left;"><b>Sekolah</b></td>
+        <td style="border:none; padding:4px; text-align:left;">: ${form.namaSekolah || "-"}</td>
+        <td style="border:none; padding:4px; text-align:left;"><b>Semester</b></td>
+        <td style="border:none; padding:4px; text-align:left;">: ${form.semester || "-"}</td>
+      </tr>
+      <tr>
+        <td style="border:none; padding:4px; text-align:left;"><b>Penyusun</b></td>
+        <td style="border:none; padding:4px; text-align:left;">: ${form.namaPenyusun || "-"}</td>
+        <td style="border:none; padding:4px; text-align:left;"><b>Tahun Pelajaran</b></td>
+        <td style="border:none; padding:4px; text-align:left;">: ${form.tahunPelajaran || "-"}</td>
+      </tr>
+      <tr>
+        <td style="border:none; padding:4px; text-align:left;"><b>Topik</b></td>
+        <td colspan="3" style="border:none; padding:4px; text-align:left;">: ${form.topik || "-"}</td>
+      </tr>
+    </table>
+    <hr style="border:none; border-top:1.5px solid #cdb8ff; margin:16px 0 0;"/>
+  </div>`;
+}
+
+// PERBAIKAN: Menambahkan fungsi untuk me-render Blok Validasi Dokumen (Tanda Tangan) secara paksa di akhir dokumen Modul.
+function buildSignatureBlockHtml(form){
+  return `
+  <div style="margin-top: 40px; page-break-inside: avoid;">
+    <h3 style="font-size:15px; text-transform:uppercase; color:#2e1863; margin-bottom:10px;">BLOK VALIDASI DOKUMEN</h3>
+    <table style="width:100%; border-collapse:collapse; text-align:left; border: 1px solid #000;" cellpadding="8" cellspacing="0">
+      <tr>
+        <td style="width:50%; border: 1px solid #000; background:#f2edff; vertical-align:top;">
+          <b>Mengetahui,</b><br/><b>Kepala ${form.namaSekolah || "Sekolah"}</b>
+        </td>
+        <td style="width:50%; border: 1px solid #000; background:#f2edff; vertical-align:top;">
+          <b>${form.titimangsa || "....................., ............................"}</b><br/><b>Guru Mata Pelajaran</b>
+        </td>
+      </tr>
+      <tr>
+        <td style="height: 100px; border: 1px solid #000; vertical-align:bottom; padding-bottom: 12px;">
+          <b>${form.namaKepsek || "________________________"}</b><br/>
+          NIP. ${form.nipKepsek || "________________________"}
+        </td>
+        <td style="height: 100px; border: 1px solid #000; vertical-align:bottom; padding-bottom: 12px;">
+          <b>${form.namaPenyusun || "________________________"}</b><br/>
+          NIP. ${form.nip || "________________________"}
+        </td>
+      </tr>
+    </table>
+  </div>`;
+}
+
+// PERBAIKAN: Menambahkan tag namespaces XML khusus agar MS Word terpaksa masuk ke Print Layout mode.
+function buildDocHtmlDocument(bodyHtml, title){
+  return `<html xmlns:v="urn:schemas-microsoft-com:vml"
+xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:w="urn:schemas-microsoft-com:office:word"
+xmlns:m="http://schemas.microsoft.com/office/2004/12/omml"
+xmlns="http://www.w3.org/TR/REC-html40">
+  <head>
+    <meta charset="utf-8">
+    <title>${title}</title>
+    <meta name="ProgId" content="Word.Document">
+    <meta name="Generator" content="Microsoft Word 15">
+    <meta name="Originator" content="Microsoft Word 15">
+    <!--[if gte mso 9]><xml>
+     <w:WordDocument>
+      <w:View>Print</w:View>
+      <w:Zoom>100</w:Zoom>
+      <w:DoNotOptimizeForBrowser/>
+     </w:WordDocument>
+    </xml><![endif]-->
+    <style>${DOC_HTML_STYLE}</style>
+  </head>
+  <body>
+    <div class="Section1">
+      ${bodyHtml}
+    </div>
+  </body>
+  </html>`;
+}
+
+function downloadBlob(content, filename, mime){
+  const blob = new Blob(['\ufeff', content], {type:mime});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=> URL.revokeObjectURL(a.href), 4000);
+}
+
 function IconGear(){ 
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -830,76 +921,6 @@ function CheckChip({label, checked, onClick}){
   );
 }
 
-/* ---------------- Word (.doc) & UI Preview Kop Helpers ---------------- */
-const DOC_HTML_STYLE = `
-  @page { size: 21cm 29.7cm; margin: 2.5cm 2cm; }
-  body{ font-family:Arial, Calibri, sans-serif; font-size:13.5px; line-height:1.6; color:#1a1a1a; text-align:left; }
-  p{ margin:0 0 8px 0; text-align:left; }
-  h1,h2,h3{ font-family:Arial, Calibri, sans-serif; color:#2e1863; text-align:left; }
-  h1{ font-size:20px; margin-top:0; } h2{ font-size:16px; } h3{ font-size:14px; }
-  table{ border-collapse:collapse; width:100%; margin:10px 0; }
-  th,td{ border:1px solid #999; padding:6px 8px; font-size:12.5px; text-align:left; }
-  th{ background:#f2edff; }
-  li{ text-align:left; }
-  .page-break{ page-break-before:always; mso-page-break-before:always; mso-special-character:line-break; }
-`;
-
-function buildKopHtml(form, docTitle, pageBreak){
-  // Semua styling di sini INLINE (bukan mengandalkan class CSS) supaya tampilannya
-  // konsisten baik di preview web maupun saat dibuka di Microsoft Word.
-  const breakStyle = pageBreak ? 'page-break-before:always; mso-page-break-before:always;' : '';
-  return `
-  <div style="border:1.5px solid #e0d9f7; border-radius:12px; padding:18px 22px; margin-bottom:20px; background:#faf8ff;">
-    <div style="text-align:right; font-weight:800; font-size:23px; margin-bottom:4px; color:#2e1863; font-family:Georgia,'Times New Roman',serif; ${breakStyle}">${docTitle}</div>
-    <div style="text-align:right; font-size:12.5px; color:#5b5477; margin-bottom:18px; font-weight:700;">Disusun mengikuti kerangka Pembelajaran Mendalam — Permendikdasmen No. 13/2025</div>
-    <table style="width:100%; border-collapse:collapse; margin-bottom:6px;" cellpadding="4" cellspacing="0">
-      <tr>
-        <td style="width:18%; border:none; padding:4px; text-align:left;"><b>Mata Pelajaran</b></td>
-        <td style="width:32%; border:none; padding:4px; text-align:left;">: ${form.mapel || "-"}</td>
-        <td style="width:18%; border:none; padding:4px; text-align:left;"><b>Fase / Kelas</b></td>
-        <td style="width:32%; border:none; padding:4px; text-align:left;">: ${form.fase || "-"} / ${form.kelas || "-"}</td>
-      </tr>
-      <tr>
-        <td style="border:none; padding:4px; text-align:left;"><b>Sekolah</b></td>
-        <td style="border:none; padding:4px; text-align:left;">: ${form.namaSekolah || "-"}</td>
-        <td style="border:none; padding:4px; text-align:left;"><b>Semester</b></td>
-        <td style="border:none; padding:4px; text-align:left;">: ${form.semester || "-"}</td>
-      </tr>
-      <tr>
-        <td style="border:none; padding:4px; text-align:left;"><b>Penyusun</b></td>
-        <td style="border:none; padding:4px; text-align:left;">: ${form.namaPenyusun || "-"}</td>
-        <td style="border:none; padding:4px; text-align:left;"><b>Tahun Pelajaran</b></td>
-        <td style="border:none; padding:4px; text-align:left;">: ${form.tahunPelajaran || "-"}</td>
-      </tr>
-      <tr>
-        <td style="border:none; padding:4px; text-align:left;"><b>Topik</b></td>
-        <td colspan="3" style="border:none; padding:4px; text-align:left;">: ${form.topik || "-"}</td>
-      </tr>
-    </table>
-    <hr style="border:none; border-top:1.5px solid #cdb8ff; margin:16px 0 0;"/>
-  </div>`;
-}
-
-function buildDocHtmlDocument(bodyHtml, title){
-  return `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-  <head><meta charset="utf-8"><title>${title}</title>
-  <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
-  <style>${DOC_HTML_STYLE}</style>
-  </head>
-  <body>${bodyHtml}</body></html>`;
-}
-
-function downloadBlob(content, filename, mime){
-  const blob = new Blob(['\ufeff', content], {type:mime});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(()=> URL.revokeObjectURL(a.href), 4000);
-}
-
 function PromptPreviewModal({open, onClose, systemText, userText, onCopy}){
   const [tab, setTab] = useState("user");
   if(!open) return null;
@@ -924,7 +945,6 @@ function PromptPreviewModal({open, onClose, systemText, userText, onCopy}){
   );
 }
 
-/* ---------------- main App ---------------- */
 function App(){
   const [theme, setTheme] = useState(()=> store.get("pm_theme") || "light");
   const [apiKey, setApiKey] = useState(()=> store.get("pm_gemini_key") || GEMINI_API_KEY_FALLBACK);
@@ -986,7 +1006,6 @@ function App(){
   const [activeTab, setActiveTab] = useState(null);
   const [regenKey, setRegenKey] = useState(null);
 
-  // Fitur bertenaga LLM baru
   const [isGeneratingTP, setIsGeneratingTP] = useState(false);
   const [isGeneratingInstruksi, setIsGeneratingInstruksi] = useState(false);
   const [isReviewing, setIsReviewing] = useState(false);
@@ -1092,7 +1111,6 @@ function App(){
     setFile(null); setFileBase64(null); setFileTextExtract(""); setFileError("");
   }
 
-  // --- LLM Powered Features ---
   async function handleSuggestTP() {
     if(!apiKey) { setToast("Harap isi API Key Gemini dulu di Pengaturan (⚙️)."); return; }
     if(!form.mapel || !form.topik) { setToast("Harap isi Mata Pelajaran dan Topik terlebih dahulu."); return; }
@@ -1190,7 +1208,7 @@ function App(){
         const saran = outputs.length > 2
           ? `Coba pilih lebih sedikit dokumen output sekaligus (mis. 2-3 dokumen per generate), lalu gunakan tombol "Regenerate bagian ini" untuk sisanya${missingDocs.length?` (terindikasi hilang: ${missingDocs.join(", ")})`:""}.`
           : `Gunakan tombol "Regenerate bagian ini" pada dokumen yang isinya terlihat terpotong.`;
-        noteList.push(`⚠️ Respons AI mencapai batas maksimum token sebelum selesai menulis semua dokumen — bukan karena model "kurang pintar", tapi karena terlalu banyak dokumen panjang diminta dalam satu kali panggilan. ${saran}`);
+        noteList.push(`⚠️ Respons AI mencapai batas maksimum token sebelum selesai menulis semua dokumen. ${saran}`);
       }
       if(noteList.length) setWarnings(w=>[...w, ...noteList]);
       const entry = {
@@ -1245,7 +1263,6 @@ function App(){
   function loadHistory(entry){
     setResults(entry.results);
     setParseMeta(entry.parseMeta || {});
-    // Memastikan urutan tetap baku saat dimuat dari riwayat
     const order = OUTPUT_DOCS.map(d=>d.key);
     setOutputs(order.filter(k=>(entry.outputs||[]).includes(k)));
     setForm({...DEFAULT_FORM, ...entry.form});
@@ -1269,15 +1286,17 @@ function App(){
     downloadBlob(content, `${sanitizeFilename(DOC_LABEL[docKey])}_${sanitizeFilename(form.topik||"materi")}.md`, "text/markdown;charset=utf-8");
   }
   function downloadDoc(docKey, content){
-    // Menggunakan body khusus tanpa wrapper UI agar di Word tetap rapi
-    const body = buildKopHtml(form, DOC_LABEL[docKey], false) + renderMd(content);
+    let body = buildKopHtml(form, DOC_LABEL[docKey], false) + renderMd(content);
+    if (docKey === "modul") body += buildSignatureBlockHtml(form);
     const html = buildDocHtmlDocument(body, DOC_LABEL[docKey]);
     downloadBlob(html, `${sanitizeFilename(DOC_LABEL[docKey])}_${sanitizeFilename(form.topik||"materi")}.doc`, "application/msword");
   }
   function downloadAllDoc(){
     if(!results) return;
     const parts = outputs.filter(k=>results[k]).map((k,idx)=>{
-      return buildKopHtml(form, DOC_LABEL[k], idx>0) + renderMd(results[k]);
+      let partHtml = buildKopHtml(form, DOC_LABEL[k], idx>0) + renderMd(results[k]);
+      if (k === "modul") partHtml += buildSignatureBlockHtml(form);
+      return partHtml;
     });
     const html = buildDocHtmlDocument(parts.join("\n"), "Perangkat Ajar - " + (form.topik||"Materi"));
     downloadBlob(html, `PerangkatAjar_${sanitizeFilename(form.topik||"materi")}.doc`, "application/msword");
@@ -1306,9 +1325,6 @@ function App(){
             </div>
           </div>
           <div className="header-actions">
-            <a href="index.html" className="icon-btn" title="Kembali ke Beranda">
-              <IconHome/>
-            </a>
             <button className="icon-btn" title="Preview Prompt" onClick={()=>setShowPreview(true)}>
               <IconEye/>
             </button>
@@ -1337,7 +1353,7 @@ function App(){
         <section className="hero">
           <div className="eyebrow">✦ Sesuai Permendikdasmen No. 13/2025</div>
           <h1>Susun perangkat ajar <span>Pembelajaran Mendalam</span> dalam hitungan menit</h1>
-          <p>Modul, materi ajar, LKPD, asesmen, soal evaluasi, dan tindak lanjut yang terintegrasi, dibangun mengikuti alur Memahami–Mengaplikasi–Merefleksi untuk guru SD, SMP, SMA, dan SMK.</p>
+          <p>Modul, materi ajar, LKPD, asesmen, soal evaluasi, dan tindak lanjut yang terintegrasi, dibangun mengikuti alur Memahami–Mengaplikasi–Merefleksi.</p>
           <div className="principles-row">
             <div className="pill"><i style={{background:"var(--mindful)"}}></i>Berkesadaran</div>
             <div className="pill"><i style={{background:"var(--meaning)"}}></i>Bermakna</div>
@@ -1354,17 +1370,13 @@ function App(){
         {errors.length>0 && (
           <div className="error-box">
             <span>⚠️</span>
-            <ul>
-              {errors.map((e,i)=>(<li key={i}>{e}</li>))}
-            </ul>
+            <ul>{errors.map((e,i)=>(<li key={i}>{e}</li>))}</ul>
           </div>
         )}
         {warnings.length>0 && (
           <div className="warn-box">
             <span>💡</span>
-            <ul>
-              {warnings.map((w,i)=>(<li key={i}>{w}</li>))}
-            </ul>
+            <ul>{warnings.map((w,i)=>(<li key={i}>{w}</li>))}</ul>
           </div>
         )}
 
@@ -1407,6 +1419,7 @@ function App(){
               </select>
             </div>
             <div className="field"><label>Tahun Pelajaran</label><input className="input" value={form.tahunPelajaran} onChange={e=>updateField("tahunPelajaran", e.target.value)} placeholder="2025/2026"/></div>
+            <div className="field"><label>Tempat &amp; Tanggal (Titi Mangsa)</label><input className="input" value={form.titimangsa} onChange={e=>updateField("titimangsa", e.target.value)} placeholder="Mis. Sumedang, 13 Juli 2026"/></div>
           </div>
         </div>
 
@@ -1423,11 +1436,9 @@ function App(){
             </div>
           </div>
           <div className="grid2">
-            
-            {/* LLM Powered Feature 1: Saran TP Otomatis */}
             <div className={"field full" + (fieldErrors.tp?" invalid":"")}>
               <label>Tujuan Pembelajaran (TP) <span className="req">*</span><span className="charcount">{form.tp.length} karakter</span></label>
-              <textarea value={form.tp} onChange={e=>updateField("tp", e.target.value)} placeholder="Tuliskan tujuan spesifik, contoh: Peserta didik mampu menganalisis dampak perubahan iklim..."/>
+              <textarea value={form.tp} onChange={e=>updateField("tp", e.target.value)} placeholder="Tuliskan tujuan spesifik, contoh: Peserta didik mampu menganalisis dampak..."/>
               <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                 {fieldErrors.tp ? <span className="field-error-text">{fieldErrors.tp}</span> : <span className="hint">Minimal 10 karakter.</span>}
                 <button type="button" className="btn sm ghost" style={{padding:'5px 10px', color:'var(--violet-600)'}} onClick={handleSuggestTP} disabled={isGeneratingTP}>
@@ -1470,7 +1481,7 @@ function App(){
                   {fieldErrors.jumlahPertemuan && <span className="field-error-text">{fieldErrors.jumlahPertemuan}</span>}
                 </div>
               </div>
-              <div className="hint">Total ±{(parseInt(form.jpJumlah,10)||0)*(parseInt(form.jpMenit,10)||0)*(parseInt(form.jumlahPertemuan,10)||0)} menit ({form.jpJumlah} JP × {form.jpMenit} menit × {form.jumlahPertemuan||0} pertemuan)</div>
+              <div className="hint">Total ±{(parseInt(form.jpJumlah,10)||0)*(parseInt(form.jpMenit,10)||0)*(parseInt(form.jumlahPertemuan,10)||0)} menit</div>
             </div>
 
             <div className="field full">
@@ -1503,9 +1514,9 @@ function App(){
             </div>
 
             <div className="field"><label>Kesiapan &amp; Karakteristik Murid</label>
-              <textarea value={form.karakteristikMurid} onChange={e=>updateField("karakteristikMurid", e.target.value)} placeholder="Sebagian besar gaya belajar visual, menyukai studi kasus dunia nyata..."/></div>
+              <textarea value={form.karakteristikMurid} onChange={e=>updateField("karakteristikMurid", e.target.value)} placeholder="Sebagian besar gaya belajar visual..."/></div>
             <div className="field"><label>Sarana &amp; Prasarana Sekolah</label>
-              <textarea value={form.sarana} onChange={e=>updateField("sarana", e.target.value)} placeholder="Proyektor, internet 50Mbps, lab komputer..."/></div>
+              <textarea value={form.sarana} onChange={e=>updateField("sarana", e.target.value)} placeholder="Proyektor, internet 50Mbps..."/></div>
           </div>
         </div>
 
@@ -1565,14 +1576,10 @@ function App(){
                   <button onClick={(e)=>{e.stopPropagation(); removeFile();}}>✕</button>
                 </div>
               )}
-              {file && !fileReading && (
-                <div className="file-meta">{formatBytes(file.size)} {fileTextExtract && `· ${fileTextExtract.length.toLocaleString("id-ID")} karakter terbaca`} {fileBase64 && "· dikirim langsung sebagai PDF ke model"}</div>
-              )}
             </div>
             {fileError && <div className="field-error-text" style={{marginTop:8}}>{fileError}</div>}
           </div>
           
-          {/* LLM Powered Feature 2: Saran Instruksi Khusus */}
           <div className="field full">
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap'}}>
               <label>Instruksi Khusus kepada AI</label>
@@ -1587,7 +1594,6 @@ function App(){
         <div className="gen-row">
           <button className="preview-btn" onClick={()=>setShowPreview(true)}><IconEye/> Preview Prompt</button>
           
-          {/* LLM Powered Feature 3: AI Review Draft */}
           <button className="preview-btn" onClick={handleAIReview} disabled={isReviewing}>
             {isReviewing ? <span className="spinner" style={{marginRight:8}}></span> : <span style={{marginRight:6}}>✨</span>} AI Review Draft
           </button>
@@ -1652,7 +1658,7 @@ function App(){
                     </button>
                   </div>
                   {results[k] ? (
-                    <div className="doc-content" dangerouslySetInnerHTML={{__html: buildKopHtml(form, DOC_LABEL[k], false) + renderMd(results[k])}}></div>
+                    <div className="doc-content" dangerouslySetInnerHTML={{__html: buildKopHtml(form, DOC_LABEL[k], false) + renderMd(results[k]) + (k === "modul" ? buildSignatureBlockHtml(form) : "")}}></div>
                   ) : (
                     <div className="hint">Belum ada konten untuk dokumen ini.</div>
                   )}
@@ -1678,7 +1684,7 @@ function App(){
                 <input className="input" type={showKey?"text":"password"} value={tempKey} onChange={e=>setTempKey(e.target.value)} placeholder="AQ.Ab... (format baru)" autoFocus/>
                 <button className="pw-toggle" onClick={()=>setShowKey(s=>!s)}>{showKey?"🙈":"👁️"}</button>
               </div>
-              <div className="hint">Belum punya key? Dapatkan gratis di <a className="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>. Sejak pertengahan 2026 Google menerbitkan key format baru berawalan <b>AQ.</b> (menggantikan format lama <b>AIza...</b>) — tempel apa adanya, key lama maupun baru sama-sama didukung di sini.</div>
+              <div className="hint">Belum punya key? Dapatkan gratis di <a className="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.</div>
             </div>
             <div className="field">
               <label>Model Gemini</label>
@@ -1690,7 +1696,6 @@ function App(){
                   {GEMINI_MODEL_CHOICES.filter(m=>m.tier==="pro").map(m=>(<option key={m.value} value={m.value}>{m.label}</option>))}
                 </optgroup>
               </select>
-              <div className="hint">Ini jadi model utama pilihan Anda. Jika model ini sedang sibuk/limit, sistem otomatis mencoba model gratis lain secara berurutan sampai berhasil — model berbayar tidak pernah dipakai otomatis.</div>
             </div>
             <div className="modal-actions">
               <button className="btn ghost" onClick={()=>setShowSettings(false)}>Batal</button>
@@ -1700,7 +1705,6 @@ function App(){
         </div>
       )}
 
-      {/* Modal Review Draft */}
       {showReviewModal && (
         <div className="modal-backdrop" onClick={()=>setShowReviewModal(false)}>
           <div className="modal wide" onClick={e=>e.stopPropagation()}>
